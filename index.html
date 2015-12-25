@@ -1,0 +1,239 @@
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- The above 3 meta tags *must* come first in the head; any other head content must come *after* these tags -->
+    <meta name="description" content="Topic model visualization. Arxiv.org corpus. Explore the topics automatically extracted from arXiv.org database using topic modeling techniques">
+    <meta name="author" content="Peter Romov">
+    <!--<link rel="icon" href="../../favicon.ico">-->
+
+    <title>arXiv Topics</title>
+
+    <!-- Bootstrap core CSS -->
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css" integrity="sha384-1q8mTJOASx8j1Au+a5WDVnPi2lkFfwwEAa8hDDdjZlpLegxhjVME1fgjWPGmkzs7" crossorigin="anonymous">
+
+    <!-- Custom styles for this template -->
+    <style>
+      h4 {
+        margin-top: 25px;
+      }
+      .row {
+        margin-bottom: 20px;
+      }
+      .row .row {
+        margin-top: 10px;
+        margin-bottom: 0;
+      }
+      [class*="col-"] {
+        padding-top: 15px;
+        padding-bottom: 15px;
+      }
+
+      hr {
+        margin-top: 40px;
+        margin-bottom: 40px;
+      }
+    </style>
+
+    <!-- HTML5 shim and Respond.js for IE8 support of HTML5 elements and media queries -->
+    <!--[if lt IE 9]>
+      <script src="https://oss.maxcdn.com/html5shiv/3.7.2/html5shiv.min.js"></script>
+      <script src="https://oss.maxcdn.com/respond/1.4.2/respond.min.js"></script>
+    <![endif]-->
+
+    <script src="//code.jquery.com/jquery-git2.min.js"></script>
+    <script src="//d3js.org/d3.v3.min.js" charset="utf-8"></script>
+    <script src="d3.layout.cloud.js"></script>
+    <script src="//code.highcharts.com/highcharts.js"></script>
+    <script src="//code.highcharts.com/modules/exporting.js"></script>
+
+    <script>
+      function show_topics(topics) {
+
+        d3.select('#topic_list')
+          .selectAll('li')
+          .data(topics)
+          .enter()
+          .append('li')
+          .attr('class', 'list-group-item')
+          .append('a')
+          .text(function (topic) { return topic.topic_id; })
+          .attr('href', function(topic) { return '#' + topic.topic_id;})
+          .on('click', show_topic);
+
+        var topic_id = window.location.hash.substring(1);
+        var current_topic = topics.find(function (topic) { return topic.topic_id == topic_id; });
+        if (current_topic) {
+          show_topic(current_topic);
+        }
+      };
+
+      function show_topic(topic) {
+        draw_wordcloud(topic);
+        draw_history(topic);
+        draw_relevant_documents(topic);
+      };
+
+      function draw_wordcloud(topic) {
+        var width = 800;
+        var height = 400;
+        var minSize = 20;
+        var scaleCoef = 800;
+
+        var fill = d3.scale.category20();
+
+        function draw_words(words) {
+          d3.select('#words_vis').select("svg").remove();
+
+          d3.select('#words_vis')
+            .append("svg")
+            .attr("width", width)
+            .attr("height", height)
+            .style('border', '1px solid black')
+            .append("g")
+            .attr("transform", "translate(" + (width/2) + "," + (height/2) + ")")
+            .selectAll("text")
+            .data(words)
+            .enter().append("text")
+              .style("font-size", function(d) { return d.size + "px"; })
+              .style("font-family", "Impact")
+              .style("fill", function(d, i) { return fill(i); })
+              .attr("text-anchor", "middle")
+              .attr("transform", function(d) {
+                return "translate(" + [d.x, d.y] + ")rotate(" + d.rotate + ")";
+              })
+              .text(function(d) { return d.text; });
+        }
+
+        d3.layout.cloud()
+          .size([800, 400])
+          .words(topic.tokens.map(function (token) { return {text: token.token, size: minSize + scaleCoef * token.prob}; }))
+          .font("Impact")
+          .fontSize(function(d) { return d.size; })
+          .on("end", draw_words)
+          .start();
+      };
+
+      function draw_history(topic) {
+        var data_volume = topic.monthly_stats.map(function(stats) { 
+          var month = stats.month;
+          var x = Date.UTC(month.substring(0, 4), month.substring(4, 6)-1);
+          return [x, stats.volume]; 
+        });
+
+        var data_relevant = topic.yearly_stats.map(function(stats) { 
+          var year = stats.year;
+          var x = Date.UTC(year, 0, 1);
+          return [x, stats.relevant]; 
+        });
+
+        $('#time_vis_volume').highcharts({
+            chart: {
+                zoomType: 'x'
+            },
+            title: {
+                text: 'Topic volume in corpus'
+            },
+            xAxis: {
+              type: 'datetime'
+            },
+            yAxis: {
+                title: {text: 'Sum of theta_dt'}
+            },
+            legend: {enabled: false},
+            series: [{
+                type: 'area',
+                name: 'Topic volume',
+                data: data_volume,
+            }]
+        });
+
+        $('#time_vis_relevant').highcharts({
+            chart: {
+                zoomType: 'x'
+            },
+            title: {
+                text: 'Number of relevant papers'
+            },
+            xAxis: {
+              type: 'datetime'
+              //labels: {format: '{value:%Y}' }
+            },
+            yAxis: {
+                title: {text: 'Number of papers'}
+            },
+            legend: {enabled: false},
+            series: [{
+                type: 'column',
+                name: 'Relevant papers',
+                data: data_relevant,
+            }]
+        });
+ 
+      };
+
+      function draw_relevant_documents(topic) {
+        d3.select('#relevant_documents').select('div').remove();
+        var paperLinks = d3.select('#relevant_documents')
+          .append('div')
+          .selectAll('a')
+          .data(topic.papers.slice(0, 50))
+          .enter()
+          .append('a')
+          .attr('class', 'list-group-item')
+          .attr('target', '_blank')
+          .attr('href', function (paper) {
+            return paper.url;
+          });
+
+          paperLinks
+            .append('h5')
+            .attr('class', 'list-group-item-heading')
+            .text(function (paper) {
+              return paper.title;
+            });
+          paperLinks
+            .append('small')
+            .attr('class', 'list-group-item-text')
+            .text(function (paper) {
+              return 'Published ' + paper.date + ', topic volume: ' + (paper.prob*100).toFixed(1) + '%';
+            });
+      };
+
+      d3.json('arxiv_topics.json', show_topics);
+    </script>
+  </head>
+
+  <body>
+    <div class="container">
+
+      <div class="page-header">
+        <h1>arXiv Topics</h1>
+        <p class="lead">Explore the topics automatically extracted from <a href="http://arxiv.org/">arXiv.org</a> database using <a href="http://bigartm.org/">topic modeling techniques</a>.</p>
+      </div>
+
+      <div class="row">
+        <div class="col-md-2">
+          <h3>Topics</h3>
+          <ol id="topic_list" class="list-group"></ol>
+        </div>
+        <div class="col-md-10">
+          <h3>Words</h3>
+          <div id="words_vis"></div>
+
+          <h3>History</h3>
+          <div id="time_vis_volume"></div>
+          <div id="time_vis_relevant"></div>
+
+          <h3>Most Relevant Papers</h3>
+          <div id="relevant_documents"></div>
+        </div>
+      </div>
+
+
+    </div> <!-- /container -->
+  </body>
+</html>
